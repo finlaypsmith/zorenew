@@ -106,9 +106,9 @@ jobs:
           echo "Using DISPLAY=$DISPLAY"
           python zampto_server.py -r 2
 
-      - name: Upload error artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshots
-          path: screenshots
+      # - name: Upload error artifacts
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: screenshots
+      #     path: screenshots
