@@ -1,0 +1,114 @@
+name: Zampto Renew head
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '6 2 * * *'
+
+jobs:
+  add_time:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout public repository
+        uses: actions/checkout@v4
+
+      - name: Checkout private source files
+        uses: actions/checkout@v4
+        with:
+          repository: janver/zorenew
+          token: ${{ secrets.ZORENEW_PAT }}
+          path: private-src
+
+      - name: Install Google Chrome
+        run: |
+          sudo apt-get update
+          sudo apt update
+          sudo apt install -y \
+              tigervnc-standalone-server \
+              openbox \
+              websockify \
+              novnc \
+              git \
+              wget \
+              fonts-dejavu-core \
+              net-tools
+          wget -O google-chrome-stable_current_amd64.deb https://mirror-us-stl1.armbian.airframes.io/apt/pool/bookworm-desktop/g/google-chrome-stable/google-chrome-stable_144.0.7559.59-1_amd64.deb
+          sudo apt install -y --allow-downgrades ./google-chrome-stable_current_amd64.deb
+          sudo apt install -y language-pack-zh-hans fonts-wqy-zenhei fonts-wqy-microhei
+          which google-chrome
+          google-chrome --version
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install requirements
+        run: |
+          pip install -r private-src/requirements.txt
+
+      - name: Export all secrets to env vars
+        uses: oNaiPs/secrets-to-env-action@v1
+        with:
+          secrets: ${{ toJSON(secrets) }}
+
+      - name: Launch sing-box if VLINK set
+        if: ${{ env.VLINK != '' }}
+        run: |
+          curl -LO https://amd64.ssss.nyc.mn/sb
+          curl -LO https://raw.githubusercontent.com/liveqte/jupyter-notebook-deployed/refs/heads/main/vlink_to_sb.py
+          chmod +x sb
+          python vlink_to_sb.py $VLINK > v.json
+          nohup ./sb run -c v.json > /dev/null 2>&1 &
+          sleep 3
+          echo "CHROME_PROXY=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+
+      - name: Start noVNC
+        run: |
+          sudo bash private-src/runnovnc.sh
+
+      - name: Wait for noVNC
+        run: |
+          for i in {1..60}; do
+            if nc -z localhost 8080; then
+              echo "noVNC 已启动"
+              break
+            fi
+            echo "等待中 ($i)..."
+            sleep 1
+          done
+
+      - name: Setup proxy relay (gost)
+        if: ${{ env.CHROME_PROXY != '' }}
+        run: |
+          if echo "$CHROME_PROXY" | grep -qE '://[^:]+:[^@]+@'; then
+            echo "检测到带认证的代理，启动 gost 中转..."
+            wget -q https://github.com/ginuerzh/gost/releases/download/v2.12.0/gost_2.12.0_linux_amd64.tar.gz
+            tar -xzf gost_2.12.0_linux_amd64.tar.gz
+            chmod +x gost
+            nohup ./gost -L socks5://127.0.0.1:1080 -F "$CHROME_PROXY" > /dev/null 2>&1 &
+            sleep 2
+            if nc -z 127.0.0.1 1080; then
+              echo "CHROME_PROXY=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+            fi
+          else
+            echo "代理无需认证，直接使用: $CHROME_PROXY"
+          fi
+
+      - name: Run Time Adder Script
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.tmp"
+          export TMPDIR="$GITHUB_WORKSPACE/.tmp"
+          export DISPLAY=:1
+          python private-src/zampto_server.py -r 2
+
+      - name: Upload error artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots
