@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: janver/zorenew
-          token: ${{ secrets.ZORENEW_PAT }}
+          token: ${{ secrets.UP_PAT }}
           path: private-src
 
       - name: Install Google Chrome
