@@ -85,6 +85,9 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          # 工作区已被 checkout 成 UP_REPO，gh 会按本地 git remote 推断仓库；
+          # 必须显式指向本仓库，否则会拿 github.token 去访问 UP_REPO 而报 404。
+          GH_REPO: ${{ github.repository }}
         run: |
           runs=$(gh run list --workflow="${{ github.workflow }}" --limit=100 --json databaseId --jq '.[].databaseId')
           count=0
