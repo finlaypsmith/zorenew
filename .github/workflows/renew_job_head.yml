@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
+      actions: write
       contents: write
 
     steps:
@@ -44,39 +45,19 @@ jobs:
         with:
           secrets: ${{ toJSON(secrets) }}
 
-      - name: Launch sing-box if VLINK set
-        if: ${{ env.VLINK != '' }}
+      - name: ⚙ 设置代理 (自动选择 sing-box / Xray)
+        continue-on-error: false
+        env:
+          NODE_LINK: ${{ secrets.NODE_LINK }}
         run: |
-          curl -LO https://amd64.ssss.nyc.mn/sb
-          curl -LO https://raw.githubusercontent.com/liveqte/jupyter-notebook-deployed/refs/heads/main/vlink_to_sb.py
-          chmod +x sb
-          python vlink_to_sb.py $VLINK > v.json
-          nohup ./sb run -c v.json > /dev/null 2>&1 &
-          sleep 3
-          echo "CHROME_PROXY=socks5://127.0.0.1:1080" >> $GITHUB_ENV
-
-      - name: Setup proxy relay (gost)
-        if: ${{ env.CHROME_PROXY != '' }}
-        run: |
-          if echo "$CHROME_PROXY" | grep -qE '://[^:]+:[^@]+@'; then
-            echo "检测到带认证的代理，启动 gost 中转..."
-            wget -q https://github.com/ginuerzh/gost/releases/download/v2.12.0/gost_2.12.0_linux_amd64.tar.gz
-            tar -xzf gost_2.12.0_linux_amd64.tar.gz
-            chmod +x gost
-            nohup ./gost -L socks5://127.0.0.1:1080 -F "$CHROME_PROXY" > /dev/null 2>&1 &
-            sleep 2
-            if nc -z 127.0.0.1 1080; then
-              echo "✅ gost 代理中转启动成功 (127.0.0.1:1080)"
-              echo "CHROME_PROXY=socks5://127.0.0.1:1080" >> $GITHUB_ENV
-            fi
-          else
-            echo "✅ 代理无需认证，直接使用: $CHROME_PROXY"
-          fi
+          bash <(wget -qO- https://gist.githubusercontent.com/janver/c5dcc485bb25a43568cb33ac3cb49efd/raw/setup_p.sh)
 
       - name: Start X Virtual Frame Buffer (Xvfb)
         run: Xvfb :1 -ac &
 
       - name: Run Time Adder Script
+        env:
+          CHROME_PROXY: ${{ env.PROXY_SERVER }}
         run: |
           mkdir -p "$GITHUB_WORKSPACE/.tmp"
           export TMPDIR="$GITHUB_WORKSPACE/.tmp"
@@ -91,3 +72,26 @@ jobs:
       #   with:
       #     name: screenshots
       #     path: screenshots
+
+      - name: Cleanup proxy
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          pkill -f 'xray run' || true
+          rm -f sing-box sing-box-config.json sing-box.log
+          rm -f xray xray-config.json xray.log
+
+      - name: 🧹 清理旧的工作流运行记录
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runs=$(gh run list --workflow="${{ github.workflow }}" --limit=100 --json databaseId --jq '.[].databaseId')
+          count=0
+          for run_id in $runs; do
+            count=$((count + 1))
+            if [ $count -gt 1 ]; then
+              echo "删除运行记录: $run_id"
+              gh run delete $run_id || true
+            fi
+          done
