@@ -2,8 +2,8 @@ name: Zampto Renew head
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '6 2 * * *'
+  # schedule:
+    # - cron: '6 2 * * *'
 
 jobs:
   add_time:
